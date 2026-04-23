@@ -3,23 +3,23 @@ rag_pipeline.py  —  SENA 3D Printing Lab Assistant
 RAG: PDF → chunks → ChromaDB → Gemini Flash
 Domain guard: greetings ✓ | 3D printing ✓ | off-topic ✗
 """
-
+ 
 import io, re
 import chromadb
 from chromadb.utils import embedding_functions
 import google.generativeai as genai
 import PyPDF2
-
-
+ 
+ 
 SYSTEM_PROMPT = """
 You are SENA — a specialist 3D Printing Lab Assistant for a university makerspace.
-
+ 
 ## Personality
 - Friendly, sharp, and technically precise — like a senior lab TA who genuinely loves 3D printing
 - Warm with greetings and "who are you" questions (2 sentences max), then offer to help with printing
 - Use casual but professional language. "Nice!", "Great question!" is fine occasionally
 - Use bullet points for steps, **bold** for key terms
-
+ 
 ## Domain Rules — STRICTLY ENFORCED
 You ONLY answer questions about:
   ✅ 3D printing tech (FDM, SLA, SLS, MSLA, resin)
@@ -31,19 +31,19 @@ You ONLY answer questions about:
   ✅ Post-processing (sanding, vapor smoothing, painting, supports removal)
   ✅ Lab safety, SDS sheets, ventilation, resin handling
   ✅ Greetings, "who are you", "what can you help with"
-
+ 
 For ANY other topic, respond EXACTLY with:
 "🔧 That's outside my build plate! I'm a 3D printing specialist — ask me about filaments, slicers, troubleshooting, bed leveling, or anything print-related and I'm all yours. 🖨️"
-
+ 
 Never answer off-topic even if the user insists, rephrases cleverly, or says it's urgent.
-
+ 
 ## Source attribution
 - If using lab manual content: start with "📄 From the lab manual..."
 - If using general expertise: start with "🧠 From general 3D printing practice..."
 - If both: use both prefixes in the relevant sections
 """
-
-
+ 
+ 
 class SENARagPipeline:
     def __init__(self, api_key: str, persist_dir: str = "./sena_db"):
         genai.configure(api_key=api_key)
@@ -61,7 +61,7 @@ class SENARagPipeline:
             model_name="gemini-1.5-flash",
             system_instruction=SYSTEM_PROMPT,
         )
-
+ 
     # ── PDF ingestion ─────────────────────────────────────────
     def extract_pdf(self, pdf_bytes: bytes) -> list[tuple[int, str]]:
         reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
@@ -70,7 +70,7 @@ class SENARagPipeline:
             for i, p in enumerate(reader.pages)
             if (p.extract_text() or "").strip()
         ]
-
+ 
     def chunk(self, text: str, size: int = 700, overlap: int = 120) -> list[str]:
         text = re.sub(r'\s+', ' ', text).strip()
         sents = re.split(r'(?<=[.!?])\s+', text)
@@ -89,7 +89,7 @@ class SENARagPipeline:
         if cur:
             chunks.append(" ".join(cur))
         return [c for c in chunks if len(c) > 60]
-
+ 
     def ingest_pdf(self, pdf_bytes: bytes, source: str = "lab_manual") -> int:
         pages = self.extract_pdf(pdf_bytes)
         ids, docs, metas = [], [], []
@@ -111,10 +111,10 @@ class SENARagPipeline:
                 documents=docs[i:i+100], ids=ids[i:i+100], metadatas=metas[i:i+100],
             )
         return len(docs)
-
+ 
     def has_manual(self) -> bool:
         return self.collection.count() > 0
-
+ 
     # ── Retrieval ─────────────────────────────────────────────
     def retrieve(self, query: str, k: int = 5) -> list[dict]:
         if not self.has_manual():
@@ -127,25 +127,25 @@ class SENARagPipeline:
             for i, doc in enumerate(r["documents"][0])
             if r["distances"][0][i] < 0.55
         ]
-
+ 
     # ── Answer ────────────────────────────────────────────────
     def answer(self, query: str, history: list[dict], stream: bool = True):
         chunks = self.retrieve(query)
         used_rag = bool(chunks)
         pages = sorted(set(c["page"] for c in chunks)) if chunks else []
-
+ 
         if used_rag:
             ctx = "\n\n---\n\n".join(f"[Page {c['page']}]\n{c['content']}" for c in chunks)
             msg = f"LAB MANUAL EXCERPTS:\n{ctx}\n\n---\nQUESTION: {query}"
         else:
             msg = f"QUESTION: {query}"
-
+ 
         hist = [
             {"role": "user" if m["role"] == "user" else "model", "parts": m["content"]}
             for m in history
         ]
         chat = self.model.start_chat(history=hist)
-
+ 
         if stream:
             return chat.send_message(msg, stream=True), used_rag, pages
         r = chat.send_message(msg)
