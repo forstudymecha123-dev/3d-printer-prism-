@@ -46,16 +46,12 @@ Never answer off-topic even if the user insists, rephrases cleverly, or says it'
 
 class SENARagPipeline:
     def __init__(self, api_key: str, persist_dir: str = "./sena_db"):
-        # ✅ FIXED: Use correct v1 endpoint without v1beta
-        self.client = genai.Client(api_key=api_key)
+        # NEW GENAI CLIENT - THIS IS THE KEY CHANGE
+        self.client = genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
         self.api_key = api_key
-        self.persist_dir = persist_dir
         self.chroma_client = chromadb.PersistentClient(path=persist_dir)
-        
-        # ✅ FIXED: Use text-embedding-005 (the working one)
         self.embed_fn = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
-            api_key=api_key, 
-            model_name="models/text-embedding-005",
+            api_key=api_key, model_name="models/text-embedding-004",
         )
         self.collection = self.chroma_client.get_or_create_collection(
             name="sena_lab_manual",
@@ -92,7 +88,6 @@ class SENARagPipeline:
         return [c for c in chunks if len(c) > 60]
 
     def ingest_pdf(self, pdf_bytes: bytes, source: str = "lab_manual") -> int:
-        """Ingest PDF and chunk it into ChromaDB"""
         pages = self.extract_pdf(pdf_bytes)
         ids, docs, metas = [], [], []
         for pg, text in pages:
@@ -102,78 +97,68 @@ class SENARagPipeline:
                 metas.append({"source": source, "page": pg})
         if not docs:
             return 0
-        
-        # Remove old chunks if reingest
         try:
             old = self.collection.get(where={"source": source})
             if old["ids"]:
                 self.collection.delete(ids=old["ids"])
         except Exception:
             pass
-        
-        # Add in batches
         for i in range(0, len(docs), 100):
             self.collection.add(
-                documents=docs[i:i+100], 
-                ids=ids[i:i+100], 
-                metadatas=metas[i:i+100],
+                documents=docs[i:i+100], ids=ids[i:i+100], metadatas=metas[i:i+100],
             )
         return len(docs)
 
     def has_manual(self) -> bool:
-        """Check if manual is already loaded in ChromaDB"""
         return self.collection.count() > 0
-
-    def get_status(self) -> dict:
-        """Return current database status"""
-        count = self.collection.count()
-        return {
-            "ready": count > 0,
-            "chunks_loaded": count,
-            "db_path": self.persist_dir
-        }
 
     # ── Retrieval ─────────────────────────────────────────────
     def retrieve(self, query: str, k: int = 5) -> list[dict]:
         if not self.has_manual():
             return []
         r = self.collection.query(
-            query_texts=[query], 
-            n_results=min(k, self.collection.count()),
+            query_texts=[query], n_results=min(k, self.collection.count()),
         )
         return [
-            {
-                "content": doc, 
-                "page": r["metadatas"][0][i].get("page","?"), 
-                "dist": r["distances"][0][i]
-            }
+            {"content": doc, "page": r["metadatas"][0][i].get("page","?"), "dist": r["distances"][0][i]}
             for i, doc in enumerate(r["documents"][0])
             if r["distances"][0][i] < 0.55
         ]
 
     # ── Answer ────────────────────────────────────────────────
-    def answer(self, query: str, stream: bool = True):
-        """Generate answer with RAG context"""
+    def answer(self, query: str, history: list[dict], stream: bool = True):
         chunks = self.retrieve(query)
         used_rag = bool(chunks)
         pages = sorted(set(c["page"] for c in chunks)) if chunks else []
 
         if used_rag:
-            ctx = "\n\n---\n\n".join(
-                f"[Page {c['page']}]\n{c['content']}" for c in chunks
-            )
+            ctx = "\n\n---\n\n".join(f"[Page {c['page']}]\n{c['content']}" for c in chunks)
             msg = f"{SYSTEM_PROMPT}\n\nLAB MANUAL EXCERPTS:\n{ctx}\n\n---\nQUESTION: {query}"
         else:
             msg = f"{SYSTEM_PROMPT}\n\nQUESTION: {query}"
 
         try:
-            # ✅ Use working model
+            # GEMINI 3.1 FLASH LITE - THE ONE THAT WORKS 🔥
             response = self.client.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-3.1-flash-lite-preview",
                 contents=msg
             )
             
-            return response.text, used_rag, pages
+            if stream:
+                # For streaming, we'll return the text in chunks
+                class StreamWrapper:
+                    def __init__(self, text):
+                        self.text = text
+                    def __iter__(self):
+                        # Yield in chunks for streaming effect
+                        words = self.text.split()
+                        for i in range(0, len(words), 3):
+                            chunk_text = " ".join(words[i:i+3]) + " "
+                            yield type('obj', (object,), {'text': chunk_text})()
+                
+                return StreamWrapper(response.text), used_rag, pages
+            else:
+                return response.text, used_rag, pages
                 
         except Exception as e:
-            raise Exception(f"Model error: {e}")
+            raise Exception(f"BRUV THE MODEL IS COOKED: {e}")
