@@ -1,15 +1,15 @@
 """
-app.py  —  PRISM: 3D Printing Lab Assistant
+app.py  —  SENA: 3D Printing Lab Assistant
 Colorful, polished Streamlit UI + RAG + Gemini Flash
 Streamlit Cloud ready (reads GOOGLE_API_KEY from st.secrets)
 """
 
 import streamlit as st
-from rag_pipeline import PRISMRagPipeline
+from rag_pipeline import SENARagPipeline
 
 # ── Page config ───────────────────────────────────────────────
 st.set_page_config(
-    page_title="PRISM · 3D Lab Assistant",
+    page_title="SENA · 3D Lab Assistant",
     page_icon="🖨️",
     layout="centered",
     initial_sidebar_state="expanded",
@@ -76,17 +76,17 @@ html, body,
 /* ══════════════════════════════════════════════════
    HEADER
 ══════════════════════════════════════════════════ */
-.prism-header {
+.SENA-header {
     padding: 1.8rem 0 0.8rem;
     animation: fadeDown 0.6s ease both;
 }
-.prism-top {
+.SENA-top {
     display: flex;
     align-items: center;
     gap: 1rem;
     margin-bottom: 0.6rem;
 }
-.prism-icon-wrap {
+.SENA-icon-wrap {
     width: 52px; height: 52px;
     border-radius: 14px;
     background: linear-gradient(135deg, #ff6b2b, #ff9a5c);
@@ -96,8 +96,8 @@ html, body,
     flex-shrink: 0;
     animation: glowPulse 3s ease-in-out infinite;
 }
-.prism-title-block {}
-.prism-title {
+.SENA-title-block {}
+.SENA-title {
     font-family: 'JetBrains Mono', monospace;
     font-size: 1.55rem;
     font-weight: 700;
@@ -108,7 +108,7 @@ html, body,
     background-clip: text;
     line-height: 1.15;
 }
-.prism-subtitle {
+.SENA-subtitle {
     font-size: 0.72rem;
     color: var(--muted);
     letter-spacing: 0.2em;
@@ -470,12 +470,12 @@ def get_api_key_from_secrets():
 
 # ── Header ────────────────────────────────────────────────────
 st.markdown("""
-<div class="prism-header">
-  <div class="prism-top">
-    <div class="prism-icon-wrap">🖨️</div>
-    <div class="prism-title-block">
-      <div class="prism-title">PRISM</div>
-      <div class="prism-subtitle">3D Printing Lab Assistant · RAG + Gemini Flash</div>
+<div class="SENA-header">
+  <div class="SENA-top">
+    <div class="SENA-icon-wrap">🖨️</div>
+    <div class="SENA-title-block">
+      <div class="SENA-title">SENA</div>
+      <div class="SENA-subtitle">3D Printing Lab Assistant · RAG + Gemini Flash</div>
     </div>
   </div>
   <div class="filament-dots">
@@ -498,7 +498,7 @@ st.markdown("""
 
 # ── Sidebar ───────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown('<div style="font-size:1.2rem;font-weight:700;color:#ff6b2b;font-family:monospace">⬡ PRISM</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:1.2rem;font-weight:700;color:#ff6b2b;font-family:monospace">⬡ SENA</div>', unsafe_allow_html=True)
     st.markdown('<div style="font-size:0.7rem;color:#3a4060;font-family:monospace;margin-bottom:1rem">3D Printing Lab Assistant</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="sb-section">🔑 API Configuration</div>', unsafe_allow_html=True)
@@ -537,7 +537,7 @@ with st.sidebar:
         if pdf_key not in st.session_state:
             prog = st.progress(0, text="⚙️ Extracting text...")
             try:
-                pipeline = PRISMRagPipeline(api_key=api_key)
+                pipeline = SENARagPipeline(api_key=api_key)
                 prog.progress(30, text="🔢 Chunking...")
                 n = pipeline.ingest_pdf(uploaded_pdf.read(), source=uploaded_pdf.name)
                 prog.progress(100, text="✅ Done!")
@@ -593,7 +593,7 @@ with st.sidebar:
         st.rerun()
 
     st.markdown(
-        '<div style="margin-top:1.5rem;font-size:0.65rem;color:#2a3040;font-family:monospace;text-align:center">PRISM v1.0 · Built with ❤️<br>Gemini Flash · ChromaDB · Streamlit</div>',
+        '<div style="margin-top:1.5rem;font-size:0.65rem;color:#2a3040;font-family:monospace;text-align:center">SENA v1.0 · Built with ❤️<br>Gemini Flash · ChromaDB · Streamlit</div>',
         unsafe_allow_html=True,
     )
 
@@ -606,7 +606,7 @@ if not st.session_state.messages:
     st.markdown("""
     <div class="empty-state">
         <div class="empty-icon">🖨️</div>
-        <div class="empty-title">PRISM is warmed up and ready to print answers</div>
+        <div class="empty-title">SENA is warmed up and ready to print answers</div>
         <div class="suggest-grid">
             <div class="suggest-card">
                 <div class="suggest-icon">🛏️</div>
@@ -646,7 +646,7 @@ else:
                     )
 
 # ── Chat input ────────────────────────────────────────────────
-if prompt := st.chat_input("Ask PRISM anything about 3D printing..."):
+if prompt := st.chat_input("Ask SENA anything about 3D printing..."):
     if not api_key:
         st.error("🔑 Enter your Google API key in the sidebar to start.")
         st.stop()
@@ -655,7 +655,7 @@ if prompt := st.chat_input("Ask PRISM anything about 3D printing..."):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    pipeline = PRISMRagPipeline(api_key=api_key)
+    pipeline = SENARagPipeline(api_key=api_key)
 
     with st.chat_message("assistant"):
         placeholder = st.empty()
