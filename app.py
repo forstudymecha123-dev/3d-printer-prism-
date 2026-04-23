@@ -1,144 +1,70 @@
 """
 app.py  —  SENA: Smart Equipment Navigator & Assistant
-Custom branding for ProtoForge AI 2026 Hackathon
-Secure RAG + Gemini 3.1 Flash Lite implementation
+Polished Streamlit UI + RAG + Gemini 3.1 Flash Lite
 """
 
 import streamlit as st
-from rag_pipeline import PRISMRagPipeline # Keeping the file link for now
+from rag_pipeline import PRISMRagPipeline
 
-# ── Page config ───────────────────────────────────────────────
-st.set_page_config(
-    page_title="SENA · Lab Sentinel",
-    page_icon="🤖",
-    layout="centered",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="SENA · Lab Assistant", page_icon="🤖", layout="centered")
 
-# ── Custom CSS for the SENA Dark Mode Glow-up ──────────────────
-CSS = """
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+# Use your previous CSS block here (omitted for brevity, keep the CSS you have)
+st.markdown("""<style>...</style>""", unsafe_allow_html=True) # PASTE YOUR CSS HERE
 
-:root {
-    --orange:  #ff6b2b; /* Hot Nozzle */
-    --cyan:    #00d4e8; /* LCD Blue */
-    --base:    #0b0c10;
-    --card:    #1c1f2b;
-    --text:    #eef0f8;
-}
+def get_api_key_from_secrets():
+    try: return st.secrets.get("GEMINI_KEY", "") # SWAPPED TO YOUR MASKED NAME
+    except Exception: return ""
 
-html, body, [data-testid="stAppViewContainer"] {
-    background: var(--base) !important;
-    font-family: 'Outfit', sans-serif !important;
-    color: var(--text) !important;
-}
-
-/* Glassmorphism Chat Bubbles */
-[data-testid="stChatMessage"] {
-    background: rgba(255, 255, 255, 0.03) !important;
-    backdrop-filter: blur(10px);
-    border-radius: 20px !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    margin-bottom: 15px !important;
-}
-
-/* User Bubble Accent */
-[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
-    border: 1px solid #ff6b2b44 !important;
-}
-
-/* Assistant Bubble Accent */
-[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {
-    border-left: 4px solid var(--cyan) !important;
-}
-
-.sena-header { padding: 1.5rem 0; text-align: center; }
-.sena-title {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 2.2rem;
-    font-weight: 800;
-    background: linear-gradient(90deg, #ff6b2b, #f472b6);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-</style>
-"""
-st.markdown(CSS, unsafe_allow_html=True)
-
-# ── SECURE KEY RETRIEVAL ──────────────────────────────────────
-def get_gemini_key():
-    try:
-        # Masked key retrieval from Streamlit Secrets
-        return st.secrets["GEMINI_KEY"]
-    except Exception:
-        return ""
-
-api_key = get_gemini_key()
-
-# ── SENA Header ──────────────────────────────────────────────
+# ── Header ────────────────────────────────────────────────────
 st.markdown("""
-<div class="sena-header">
-    <div class="sena-title">🤖 SENA</div>
-    <div style="color: #4a5272; font-family: 'JetBrains Mono'; letter-spacing: 2px;">
-        SMART EQUIPMENT NAVIGATOR & ASSISTANT
+<div class="prism-header">
+  <div class="prism-top">
+    <div class="prism-icon-wrap">🤖</div>
+    <div class="prism-title-block">
+      <div class="prism-title">SENA</div>
+      <div class="prism-subtitle">Smart Equipment Navigator · Phase 2 Live</div>
     </div>
+  </div>
 </div>
+<div class="divider-gradient"></div>
 """, unsafe_allow_html=True)
 
-# ── Sidebar Configuration ─────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 🦾 SENA Control Panel")
-    if api_key:
-        st.success("✅ Gemini Key Securely Loaded")
-    else:
-        st.error("🔑 KEY MISSING: Add 'GEMINI_KEY' to Streamlit Secrets.")
+    st.markdown('<div style="font-size:1.2rem;font-weight:700;color:#ff6b2b;font-family:monospace">⬡ SENA</div>', unsafe_allow_html=True)
+    api_key = get_api_key_from_secrets()
+    if api_key: st.success("✅ Gemini Key Securely Loaded")
+    else: api_key = st.text_input("Google API Key", type="password")
     
-    st.divider()
-    uploaded_pdf = st.file_uploader("📂 Upload Lab Manual (PDF)", type=["pdf"])
+    uploaded_pdf = st.file_uploader("Upload Lab Manual", type=["pdf"])
+    if uploaded_pdf and api_key:
+        pipeline = PRISMRagPipeline(api_key=api_key)
+        n = pipeline.ingest_pdf(uploaded_pdf.read(), source=uploaded_pdf.name)
+        st.session_state["pdf_loaded"] = True
+        st.session_state["pdf_chunks"] = n
 
-# ── Chat Engine ───────────────────────────────────────────────
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "model", "content": "Yo! SENA is online. Which machine are we calibrating today, bruv? 🏎️💨"}]
+    st.session_state.messages = []
+
+# Main Chat Loop
+if not st.session_state.messages:
+    st.markdown('<div class="empty-state"><div class="empty-title">SENA is online. What are we building, bruv?</div></div>', unsafe_allow_html=True)
 
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+    with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-if prompt := st.chat_input("Ask SENA about 3D printing, CNC, or Laser safety..."):
-    if not api_key:
-        st.error("Bruv, I need the API key in the secrets to wake up.")
-        st.stop()
-
+if prompt := st.chat_input("Ask SENA anything..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    # Initialize the RAG Pipeline
+    with st.chat_message("user"): st.markdown(prompt)
+    
     pipeline = PRISMRagPipeline(api_key=api_key)
-
     with st.chat_message("assistant"):
         placeholder = st.empty()
-        full_response = ""
-        try:
-            # Running the RAG answer logic
-            stream, used_rag, pages = pipeline.answer(
-                query=prompt,
-                history=st.session_state.messages[:-1],
-                stream=True,
-            )
-            for chunk in stream:
-                full_response += chunk.text
-                placeholder.markdown(full_response + " ▌")
-            placeholder.markdown(full_response)
-            
-            # Badge labeling
-            if used_rag:
-                st.info(f"📄 Source: Lab Manual (pp. {', '.join(map(str, pages))})")
-            else:
-                st.caption("🧠 Source: General Mechatronics Knowledge")
-                
-        except Exception as e:
-            st.error(f"API caught an L: {e}")
+        full = ""
+        stream, used_rag, pages = pipeline.answer(query=prompt, history=st.session_state.messages[:-1], stream=True)
+        for chunk in stream:
+            full += chunk.text
+            placeholder.markdown(full + " ▌")
+        placeholder.markdown(full)
+        if used_rag: st.info(f"📄 Lab manual (pp. {', '.join(map(str, pages))})")
 
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+    st.session_state.messages.append({"role": "assistant", "content": full, "rag_used": used_rag, "pages": pages})
