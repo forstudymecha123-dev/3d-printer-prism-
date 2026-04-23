@@ -1,3 +1,4 @@
+
 """
 app.py  —  SENA: 3D Printing Lab Assistant
 Colorful, polished Streamlit UI + RAG + Gemini Flash
@@ -76,17 +77,17 @@ html, body,
 /* ══════════════════════════════════════════════════
    HEADER
 ══════════════════════════════════════════════════ */
-.SENA-header {
+.prism-header {
     padding: 1.8rem 0 0.8rem;
     animation: fadeDown 0.6s ease both;
 }
-.SENA-top {
+.prism-top {
     display: flex;
     align-items: center;
     gap: 1rem;
     margin-bottom: 0.6rem;
 }
-.SENA-icon-wrap {
+.prism-icon-wrap {
     width: 52px; height: 52px;
     border-radius: 14px;
     background: linear-gradient(135deg, #ff6b2b, #ff9a5c);
@@ -96,8 +97,8 @@ html, body,
     flex-shrink: 0;
     animation: glowPulse 3s ease-in-out infinite;
 }
-.SENA-title-block {}
-.SENA-title {
+.prism-title-block {}
+.prism-title {
     font-family: 'JetBrains Mono', monospace;
     font-size: 1.55rem;
     font-weight: 700;
@@ -108,7 +109,7 @@ html, body,
     background-clip: text;
     line-height: 1.15;
 }
-.SENA-subtitle {
+.prism-subtitle {
     font-size: 0.72rem;
     color: var(--muted);
     letter-spacing: 0.2em;
@@ -470,12 +471,12 @@ def get_api_key_from_secrets():
 
 # ── Header ────────────────────────────────────────────────────
 st.markdown("""
-<div class="SENA-header">
-  <div class="SENA-top">
-    <div class="SENA-icon-wrap">🖨️</div>
-    <div class="SENA-title-block">
-      <div class="SENA-title">SENA</div>
-      <div class="SENA-subtitle">3D Printing Lab Assistant · RAG + Gemini Flash</div>
+<div class="prism-header">
+  <div class="prism-top">
+    <div class="prism-icon-wrap">🖨️</div>
+    <div class="prism-title-block">
+      <div class="prism-title">SENA</div>
+      <div class="prism-subtitle">3D Printing Lab Assistant · RAG + Gemini Flash</div>
     </div>
   </div>
   <div class="filament-dots">
@@ -689,4 +690,3 @@ if prompt := st.chat_input("Ask SENA anything about 3D printing..."):
         "rag_used": used_rag,
         "pages": pages,
     })
-
