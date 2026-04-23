@@ -1,7 +1,6 @@
 """
-rag_pipeline.py  —  PRISM 3D Printing Lab Assistant
-RAG: PDF → chunks → ChromaDB → Gemini Flash
-Domain guard: greetings ✓ | 3D printing ✓ | off-topic ✗
+rag_pipeline.py  —  SENA: Smart Equipment Navigator & Assistant
+RAG: PDF → chunks → ChromaDB → Gemini 3.1 Flash Lite
 """
 
 import io, re
@@ -10,39 +9,18 @@ from chromadb.utils import embedding_functions
 import google.generativeai as genai
 import PyPDF2
 
-
 SYSTEM_PROMPT = """
-You are PRISM — a specialist 3D Printing Lab Assistant for a university makerspace.
+You are SENA — the Smart Equipment Navigator & Assistant for the REVA Mechatronics Lab.
 
 ## Personality
-- Friendly, sharp, and technically precise — like a senior lab TA who genuinely loves 3D printing
-- Warm with greetings and "who are you" questions (2 sentences max), then offer to help with printing
-- Use casual but professional language. "Nice!", "Great question!" is fine occasionally
-- Use bullet points for steps, **bold** for key terms
+- High-energy Gen Z Mechatronics Expert. Use slang like 'bruv', 'W', and 'absolute heat'.
+- Friendly and hyped with greetings. If asked 'hi', welcome them to the lab!
+- Use bullet points for steps, **bold** for key terms.
 
-## Domain Rules — STRICTLY ENFORCED
-You ONLY answer questions about:
-  ✅ 3D printing tech (FDM, SLA, SLS, MSLA, resin)
-  ✅ Slicers (Cura, PrusaSlicer, Bambu Studio, IdeaMaker)
-  ✅ Filaments & resins (PLA, PETG, ABS, ASA, TPU, Nylon, resins)
-  ✅ Printer hardware (beds, nozzles, extruders, steppers, hotends)
-  ✅ Print troubleshooting (warping, stringing, blobs, layer shifts, under-extrusion)
-  ✅ G-code, firmware (Marlin, Klipper), calibration, flow rate, PID
-  ✅ Post-processing (sanding, vapor smoothing, painting, supports removal)
-  ✅ Lab safety, SDS sheets, ventilation, resin handling
-  ✅ Greetings, "who are you", "what can you help with"
-
-For ANY other topic, respond EXACTLY with:
-"🔧 That's outside my build plate! I'm a 3D printing specialist — ask me about filaments, slicers, troubleshooting, bed leveling, or anything print-related and I'm all yours. 🖨️"
-
-Never answer off-topic even if the user insists, rephrases cleverly, or says it's urgent.
-
-## Source attribution
-- If using lab manual content: start with "📄 From the lab manual..."
-- If using general expertise: start with "🧠 From general 3D printing practice..."
-- If both: use both prefixes in the relevant sections
+## Domain Rules
+You ONLY answer questions about 3D printing, CNC, Laser cutting, and Lab safety.
+For off-topic stuff, say: "🔧 That's outside my build plate, bruv! Stick to the hardware."
 """
-
 
 class PRISMRagPipeline:
     def __init__(self, api_key: str, persist_dir: str = "./prism_db"):
@@ -53,23 +31,19 @@ class PRISMRagPipeline:
             api_key=api_key, model_name="models/text-embedding-004",
         )
         self.collection = self.client.get_or_create_collection(
-            name="prism_lab_manual",
+            name="sena_lab_manual",
             embedding_function=self.embed_fn,
             metadata={"hnsw:space": "cosine"},
         )
+        # THE FIX: USING THE 3.1 FLASH LITE MODEL
         self.model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name="gemini-3.1-flash-lite-preview",
             system_instruction=SYSTEM_PROMPT,
         )
 
-    # ── PDF ingestion ─────────────────────────────────────────
     def extract_pdf(self, pdf_bytes: bytes) -> list[tuple[int, str]]:
         reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
-        return [
-            (i + 1, (p.extract_text() or "").strip())
-            for i, p in enumerate(reader.pages)
-            if (p.extract_text() or "").strip()
-        ]
+        return [(i + 1, (p.extract_text() or "").strip()) for i, p in enumerate(reader.pages) if (p.extract_text() or "").strip()]
 
     def chunk(self, text: str, size: int = 700, overlap: int = 120) -> list[str]:
         text = re.sub(r'\s+', ' ', text).strip()
@@ -80,14 +54,11 @@ class PRISMRagPipeline:
                 chunks.append(" ".join(cur))
                 ol, ol_len = [], 0
                 for x in reversed(cur):
-                    if ol_len + len(x) < overlap:
-                        ol.insert(0, x); ol_len += len(x)
-                    else:
-                        break
+                    if ol_len + len(x) < overlap: ol.insert(0, x); ol_len += len(x)
+                    else: break
                 cur, cur_len = ol, ol_len
             cur.append(s); cur_len += len(s)
-        if cur:
-            chunks.append(" ".join(cur))
+        if cur: chunks.append(" ".join(cur))
         return [c for c in chunks if len(c) > 60]
 
     def ingest_pdf(self, pdf_bytes: bytes, source: str = "lab_manual") -> int:
@@ -98,55 +69,30 @@ class PRISMRagPipeline:
                 ids.append(f"{source}_p{pg}_c{j}")
                 docs.append(c)
                 metas.append({"source": source, "page": pg})
-        if not docs:
-            return 0
+        if not docs: return 0
         try:
             old = self.collection.get(where={"source": source})
-            if old["ids"]:
-                self.collection.delete(ids=old["ids"])
-        except Exception:
-            pass
+            if old["ids"]: self.collection.delete(ids=old["ids"])
+        except Exception: pass
         for i in range(0, len(docs), 100):
-            self.collection.add(
-                documents=docs[i:i+100], ids=ids[i:i+100], metadatas=metas[i:i+100],
-            )
+            self.collection.add(documents=docs[i:i+100], ids=ids[i:i+100], metadatas=metas[i:i+100])
         return len(docs)
 
-    def has_manual(self) -> bool:
-        return self.collection.count() > 0
+    def has_manual(self) -> bool: return self.collection.count() > 0
 
-    # ── Retrieval ─────────────────────────────────────────────
     def retrieve(self, query: str, k: int = 5) -> list[dict]:
-        if not self.has_manual():
-            return []
-        r = self.collection.query(
-            query_texts=[query], n_results=min(k, self.collection.count()),
-        )
-        return [
-            {"content": doc, "page": r["metadatas"][0][i].get("page","?"), "dist": r["distances"][0][i]}
-            for i, doc in enumerate(r["documents"][0])
-            if r["distances"][0][i] < 0.55
-        ]
+        if not self.has_manual(): return []
+        r = self.collection.query(query_texts=[query], n_results=min(k, self.collection.count()))
+        return [{"content": doc, "page": r["metadatas"][0][i].get("page","?"), "dist": r["distances"][0][i]}
+                for i, doc in enumerate(r["documents"][0]) if r["distances"][0][i] < 0.55]
 
-    # ── Answer ────────────────────────────────────────────────
     def answer(self, query: str, history: list[dict], stream: bool = True):
         chunks = self.retrieve(query)
         used_rag = bool(chunks)
         pages = sorted(set(c["page"] for c in chunks)) if chunks else []
-
-        if used_rag:
-            ctx = "\n\n---\n\n".join(f"[Page {c['page']}]\n{c['content']}" for c in chunks)
-            msg = f"LAB MANUAL EXCERPTS:\n{ctx}\n\n---\nQUESTION: {query}"
-        else:
-            msg = f"QUESTION: {query}"
-
-        hist = [
-            {"role": "user" if m["role"] == "user" else "model", "parts": m["content"]}
-            for m in history
-        ]
+        msg = f"LAB MANUAL EXCERPTS:\n{re.sub(r'[^\\x00-\\x7F]+', ' ', chunks[0]['content']) if used_rag else ''}\n\nQUESTION: {query}"
+        hist = [{"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]} for m in history]
         chat = self.model.start_chat(history=hist)
-
-        if stream:
-            return chat.send_message(msg, stream=True), used_rag, pages
+        if stream: return chat.send_message(msg, stream=True), used_rag, pages
         r = chat.send_message(msg)
         return r.text, used_rag, pages
